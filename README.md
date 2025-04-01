@@ -1,10 +1,6 @@
 # DroneGuard: Comprehensive Drone Fleet Security & Monitoring System
 
-## AI-Powered Security Operations Center for Unmanned Aerial Systems
-
 Drone Guard is a comprehensive drone security and monitoring system that provides real-time tracking of drones, security metrics, threat detection, and alert management. This professional security solution manages drone fleets with emphasis on security monitoring, threat detection, and real-time surveillance capabilities. The AI-driven platform demonstrates how machine learning and intelligent analytics provide comprehensive and adaptive security for drone operations across three key areas: securing drone systems, protecting drone data, and detecting emerging threats.
-
-![Dashboard Screenshot](https://placeholder-for-dashboard-screenshot.jpg)
 
 ## 🚀 Key Features
 
