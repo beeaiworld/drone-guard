@@ -1,0 +1,423 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MapPin, Layers, Target, Shield, Battery, Signal, AlertTriangle, Map as MapIcon } from 'lucide-react';
+
+// Drone tipi tanımı
+interface Drone {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  speed: number;
+  batteryLevel: number;
+  signalStrength: number;
+  status: 'active' | 'idle' | 'returning' | 'maintenance';
+  lastUpdated: Date;
+  mission?: string;
+  isAnomalous?: boolean;
+}
+
+// Güvenli bölge tipi tanımı
+interface SafeZone {
+  id: string;
+  name: string;
+  type: 'circle' | 'polygon';
+  coordinates: number[][];
+  color: string;
+}
+
+// Örnek drone verileri
+const generateDrones = (): Drone[] => {
+  return [
+    {
+      id: 'DRN-001',
+      name: 'Alpha-1',
+      latitude: 41.0082,
+      longitude: 28.9784,
+      altitude: 120,
+      speed: 25,
+      batteryLevel: 78,
+      signalStrength: 92,
+      status: 'active',
+      lastUpdated: new Date(),
+      mission: 'Perimeter Patrol'
+    },
+    {
+      id: 'DRN-002',
+      name: 'Beta-2',
+      latitude: 41.0122,
+      longitude: 28.9756,
+      altitude: 150,
+      speed: 18,
+      batteryLevel: 65,
+      signalStrength: 88,
+      status: 'active',
+      lastUpdated: new Date(),
+      mission: 'Surveillance'
+    },
+    {
+      id: 'DRN-003',
+      name: 'Gamma-3',
+      latitude: 41.0062,
+      longitude: 28.9834,
+      altitude: 100,
+      speed: 0,
+      batteryLevel: 45,
+      signalStrength: 76,
+      status: 'idle',
+      lastUpdated: new Date(),
+      mission: 'Standby'
+    },
+    {
+      id: 'DRN-004',
+      name: 'Delta-4',
+      latitude: 41.0152,
+      longitude: 28.9704,
+      altitude: 200,
+      speed: 32,
+      batteryLevel: 82,
+      signalStrength: 94,
+      status: 'active',
+      lastUpdated: new Date(),
+      mission: 'Threat Assessment'
+    },
+    {
+      id: 'DRN-005',
+      name: 'Epsilon-5',
+      latitude: 41.0032,
+      longitude: 28.9884,
+      altitude: 90,
+      speed: 15,
+      batteryLevel: 23,
+      signalStrength: 68,
+      status: 'returning',
+      lastUpdated: new Date(),
+      mission: 'Return to Base',
+      isAnomalous: true
+    }
+  ];
+};
+
+// Örnek güvenli bölgeler
+const generateSafeZones = (): SafeZone[] => {
+  return [
+    {
+      id: 'ZONE-001',
+      name: 'Ana Üs',
+      type: 'circle',
+      coordinates: [[41.0082, 28.9784, 500]], // merkez lat, lng ve yarıçap (metre)
+      color: '#10b981' // yeşil
+    },
+    {
+      id: 'ZONE-002',
+      name: 'Kuzey Perimetresi',
+      type: 'polygon',
+      coordinates: [
+        [41.0152, 28.9704],
+        [41.0162, 28.9754],
+        [41.0142, 28.9804],
+        [41.0132, 28.9754]
+      ],
+      color: '#3b82f6' // mavi
+    },
+    {
+      id: 'ZONE-003',
+      name: 'Güney Sınırı',
+      type: 'polygon',
+      coordinates: [
+        [41.0032, 28.9784],
+        [41.0022, 28.9834],
+        [41.0012, 28.9784],
+        [41.0022, 28.9734]
+      ],
+      color: '#f59e0b' // amber
+    }
+  ];
+};
+
+// Batarya seviyesine göre renk belirleme
+const getBatteryColor = (level: number) => {
+  if (level > 70) return 'text-green-500';
+  if (level > 30) return 'text-amber-500';
+  return 'text-red-500';
+};
+
+// Sinyal gücüne göre renk belirleme
+const getSignalColor = (strength: number) => {
+  if (strength > 80) return 'text-green-500';
+  if (strength > 50) return 'text-amber-500';
+  return 'text-red-500';
+};
+
+// Drone durumuna göre badge rengi belirleme
+const getStatusBadge = (status: 'active' | 'idle' | 'returning' | 'maintenance') => {
+  switch (status) {
+    case 'active':
+      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Aktif</Badge>;
+    case 'idle':
+      return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Beklemede</Badge>;
+    case 'returning':
+      return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Dönüyor</Badge>;
+    case 'maintenance':
+      return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Bakımda</Badge>;
+  }
+};
+
+// Drone Map bileşeni
+const DroneMap: React.FC = () => {
+  const [drones, setDrones] = useState<Drone[]>(generateDrones());
+  const [safeZones, setSafeZones] = useState<SafeZone[]>(generateSafeZones());
+  const [selectedDrone, setSelectedDrone] = useState<Drone | null>(null);
+  const [mapView, setMapView] = useState<'satellite' | 'terrain' | 'hybrid'>('satellite');
+  const [showSafeZones, setShowSafeZones] = useState(true);
+  const [showAnomalies, setShowAnomalies] = useState(true);
+  
+  // Harita yükleme durumu
+  const [mapLoaded, setMapLoaded] = useState(false);
+  
+  // Harita yükleme simülasyonu
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMapLoaded(true);
+    }, 1000);
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
+  // Drone seçme işlevi
+  const handleDroneSelect = (drone: Drone) => {
+    setSelectedDrone(drone);
+  };
+  
+  // Harita görünümünü değiştirme işlevi
+  const handleMapViewChange = (view: 'satellite' | 'terrain' | 'hybrid') => {
+    setMapView(view);
+  };
+  
+  return (
+    <Card className="col-span-full">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-xl font-semibold flex items-center gap-2">
+            <MapIcon className="h-5 w-5" />
+            Drone Haritası
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={`${showSafeZones ? 'bg-primary/10' : ''}`}
+              onClick={() => setShowSafeZones(!showSafeZones)}
+            >
+              <Shield className="h-4 w-4 mr-2" />
+              Güvenli Bölgeler
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={`${showAnomalies ? 'bg-primary/10' : ''}`}
+              onClick={() => setShowAnomalies(!showAnomalies)}
+            >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Anomaliler
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sol Panel - Drone Listesi */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="p-4 rounded-lg border border-border">
+              <h3 className="text-sm font-medium mb-3">Aktif Dronlar</h3>
+              <div className="space-y-3">
+                {drones.map(drone => (
+                  <div 
+                    key={drone.id}
+                    className={`p-3 rounded-lg border ${selectedDrone?.id === drone.id ? 'border-primary bg-primary/5' : 'border-border'} cursor-pointer hover:bg-accent/50 transition-colors`}
+                    onClick={() => handleDroneSelect(drone)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className={`h-4 w-4 ${drone.isAnomalous ? 'text-red-500' : 'text-primary'}`} />
+                        <h4 className="font-medium">{drone.name}</h4>
+                      </div>
+                      {getStatusBadge(drone.status)}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Battery className={`h-3 w-3 ${getBatteryColor(drone.batteryLevel)}`} />
+                        <span>{drone.batteryLevel}%</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Signal className={`h-3 w-3 ${getSignalColor(drone.signalStrength)}`} />
+                        <span>{drone.signalStrength}%</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Target className="h-3 w-3" />
+                        <span>{drone.altitude}m</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <MapIcon className="h-3 w-3" />
+                        <span>{drone.speed} km/h</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Harita Katmanları */}
+            <div className="p-4 rounded-lg border border-border">
+              <h3 className="text-sm font-medium mb-3">Harita Katmanları</h3>
+              <div className="space-y-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={`w-full justify-start ${mapView === 'satellite' ? 'bg-primary/10' : ''}`}
+                  onClick={() => handleMapViewChange('satellite')}
+                >
+                  <Layers className="h-4 w-4 mr-2" />
+                  Uydu Görünümü
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={`w-full justify-start ${mapView === 'terrain' ? 'bg-primary/10' : ''}`}
+                  onClick={() => handleMapViewChange('terrain')}
+                >
+                  <Layers className="h-4 w-4 mr-2" />
+                  Arazi Görünümü
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className={`w-full justify-start ${mapView === 'hybrid' ? 'bg-primary/10' : ''}`}
+                  onClick={() => handleMapViewChange('hybrid')}
+                >
+                  <Layers className="h-4 w-4 mr-2" />
+                  Hibrit Görünüm
+                </Button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Sağ Panel - Harita ve Detaylar */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* Harita Alanı */}
+            <div className="relative rounded-lg border border-border overflow-hidden" style={{ height: '500px' }}>
+              {!mapLoaded ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-background">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Harita yükleniyor...</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="absolute inset-0 bg-gray-200 flex items-center justify-center">
+                  <div className="text-center p-8 bg-background/80 rounded-lg backdrop-blur-sm">
+                    <MapIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">Harita Görüntüsü</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Bu bileşen, gerçek bir harita kütüphanesi (Leaflet, Google Maps, vb.) entegrasyonu gerektirir.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Gerçek uygulamada burada interaktif bir harita görüntülenecek ve dronların konumları, rotaları ve güvenli bölgeler harita üzerinde gösterilecektir.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Seçili Drone Detayları */}
+            {selectedDrone && (
+              <div className="p-4 rounded-lg border border-border">
+                <h3 className="text-sm font-medium mb-3">Drone Detayları: {selectedDrone.name}</h3>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">ID</p>
+                    <p className="font-medium">{selectedDrone.id}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Durum</p>
+                    <div>{getStatusBadge(selectedDrone.status)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Görev</p>
+                    <p className="font-medium">{selectedDrone.mission || 'Belirtilmemiş'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Son Güncelleme</p>
+                    <p className="font-medium">{selectedDrone.lastUpdated.toLocaleTimeString()}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Enlem</p>
+                    <p className="font-medium">{selectedDrone.latitude.toFixed(4)}°</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Boylam</p>
+                    <p className="font-medium">{selectedDrone.longitude.toFixed(4)}°</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Yükseklik</p>
+                    <p className="font-medium">{selectedDrone.altitude} m</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Hız</p>
+                    <p className="font-medium">{selectedDrone.speed} km/h</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Batarya</p>
+                    <p className={`font-medium ${getBatteryColor(selectedDrone.batteryLevel)}`}>
+                      {selectedDrone.batteryLevel}%
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Sinyal Gücü</p>
+                    <p className={`font-medium ${getSignalColor(selectedDrone.signalStrength)}`}>
+                      {selectedDrone.signalStrength}%
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Anomali</p>
+                    <p className="font-medium">
+                      {selectedDrone.isAnomalous ? (
+                        <span className="text-red-500 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Tespit Edildi
+                        </span>
+                      ) : (
+                        <span className="text-green-500">Yok</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="outline" size="sm">
+                    Rota Göster
+                  </Button>
+                  <Button variant="outline" size="sm">
+                    Komut Gönder
+                  </Button>
+                  <Button variant="default" size="sm">
+                    Canlı İzle
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default DroneMap; 
